@@ -1,0 +1,404 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7ccee40..bbf7727 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -40,14 +40,14 @@ configure_file(
+ 
+ # Default behaviour is to build and link with everything
+ option(WITH_XENOMAI "Enable Xenomai support" ON)
+-option(WITH_JACK "Enable Jack support" ON)
+-option(WITH_VST2 "Enable Vst 2 support" ON)
++option(WITH_JACK "Enable Jack support" OFF)
++option(WITH_VST2 "Enable Vst 2 support" OFF)
+ option(WITH_VST3 "Enable Vst 3 support" ON)
+-option(WITH_LV2 "Enable LV 2 support" ON)
+-option(WITH_LV2_MDA_TESTS "Include unit tests depending on LV2 drobilla MDA plugin port." ON)
+-option(WITH_UNIT_TESTS "Build and run unit tests after compilation" ON)
+-option(WITH_LINK "Enable Ableton Link support" ON)
+-option(BUILD_TWINE "Build included Twine library" ON)
++option(WITH_LV2 "Enable LV 2 support" OFF)
++option(WITH_LV2_MDA_TESTS "Include unit tests depending on LV2 drobilla MDA plugin port." OFF)
++option(WITH_UNIT_TESTS "Build and run unit tests after compilation" OFF)
++option(WITH_LINK "Enable Ableton Link support" OFF)
++option(BUILD_TWINE "Build included Twine library" OFF)
+ option(WITH_RPC_INTERFACE "Enable RPC control support" ON)
+ 
+ set(AUDIO_BUFFER_SIZE 64 CACHE STRING "Set internal audio buffer size in frames")
+diff --git a/include/control_interface.h b/include/control_interface.h
+index d6421a5..1ea16d6 100644
+--- a/include/control_interface.h
++++ b/include/control_interface.h
+@@ -24,6 +24,7 @@
+ #include <utility>
+ #include <optional>
+ #include <vector>
++#include <string>
+ 
+ namespace sushi {
+ namespace ext {
+diff --git a/src/audio_frontends/base_audio_frontend.h b/src/audio_frontends/base_audio_frontend.h
+index 794d7aa..119940c 100644
+--- a/src/audio_frontends/base_audio_frontend.h
++++ b/src/audio_frontends/base_audio_frontend.h
+@@ -26,7 +26,7 @@ namespace sushi {
+ 
+ namespace audio_frontend {
+ 
+-constexpr int MAX_FRONTEND_CHANNELS = 8;
++constexpr int MAX_FRONTEND_CHANNELS = 64;
+ 
+ /**
+  * @brief Error codes returned from init()
+diff --git a/src/audio_frontends/offline_frontend.h b/src/audio_frontends/offline_frontend.h
+index 99ed34b..aff645b 100644
+--- a/src/audio_frontends/offline_frontend.h
++++ b/src/audio_frontends/offline_frontend.h
+@@ -36,7 +36,7 @@ namespace sushi {
+ namespace audio_frontend {
+ 
+ constexpr int OFFLINE_FRONTEND_CHANNELS = 2;
+-constexpr int DUMMY_FRONTEND_CHANNELS = 10;
++constexpr int DUMMY_FRONTEND_CHANNELS = 38;
+ 
+ struct OfflineFrontendConfiguration : public BaseAudioFrontendConfiguration
+ {
+diff --git a/src/engine/track.h b/src/engine/track.h
+index d0ba26e..77ea9ae 100644
+--- a/src/engine/track.h
++++ b/src/engine/track.h
+@@ -38,7 +38,7 @@ namespace sushi {
+ namespace engine {
+ 
+ /* No real technical limit, just something arbitrarily high enough */
+-constexpr int TRACK_MAX_CHANNELS = 10;
++constexpr int TRACK_MAX_CHANNELS = 36;
+ constexpr int TRACK_MAX_BUSSES = TRACK_MAX_CHANNELS / 2;
+ 
+ class Track : public InternalPlugin, public RtEventPipe
+diff --git a/src/library/types.h b/src/library/types.h
+index c1e7bc6..585674d 100644
+--- a/src/library/types.h
++++ b/src/library/types.h
+@@ -22,6 +22,7 @@
+ #define SUSHI_TYPES_H
+ 
+ #include <array>
++#include <stdint.h>
+ 
+ namespace sushi {
+ 
+diff --git a/src/library/vst3x_host_app.cpp b/src/library/vst3x_host_app.cpp
+index 6cf6c0f..654b463 100644
+--- a/src/library/vst3x_host_app.cpp
++++ b/src/library/vst3x_host_app.cpp
+@@ -148,6 +148,7 @@ PluginInstance::PluginInstance() = default;
+ 
+ PluginInstance::~PluginInstance()
+ {
++    printf("\nvst host exit\n");
+     if (_component_connection)
+     {
+         _component_connection->disconnect();
+@@ -156,6 +157,11 @@ PluginInstance::~PluginInstance()
+     {
+         _controller_connection->disconnect();
+     }
++
++    // Clean up the plugin instance
++    _controller->terminate();
++    _processor->release();    
++    _component->release();
+ }
+ 
+ bool PluginInstance::load_plugin(const std::string& plugin_path, const std::string& plugin_name)
+diff --git a/src/library/vst3x_utils.h b/src/library/vst3x_utils.h
+index b6e9c82..23e1ca6 100644
+--- a/src/library/vst3x_utils.h
++++ b/src/library/vst3x_utils.h
+@@ -36,7 +36,7 @@
+ namespace sushi {
+ namespace vst3 {
+ 
+-constexpr int VST_WRAPPER_MAX_N_CHANNELS = 8;
++constexpr int VST_WRAPPER_MAX_N_CHANNELS = 36;
+ 
+ /**
+  * @brief Wrapping the processdata in our own class for convenience
+diff --git a/src/library/vst3x_wrapper.cpp b/src/library/vst3x_wrapper.cpp
+index fc01c10..7131c03 100644
+--- a/src/library/vst3x_wrapper.cpp
++++ b/src/library/vst3x_wrapper.cpp
+@@ -324,6 +324,7 @@ void Vst3xWrapper::set_input_channels(int channels)
+ 
+ void Vst3xWrapper::set_output_channels(int channels)
+ {
++
+     Processor::set_output_channels(channels);
+     _setup_channels();
+ }
+@@ -624,16 +625,21 @@ bool Vst3xWrapper::_setup_audio_busses()
+     }
+     _max_input_channels = 0;
+     _max_output_channels = 0;
++    _current_input_channels = 0;
+     /* Setup 1 main output bus and 1 main input bus (if available) */
+     Steinberg::Vst::BusInfo info;
+-    for (int i = 0; i < input_audio_busses; ++i)
++    _num_output_busses = output_audio_busses;
++    _num_input_busses = input_audio_busses;
++    for (int i = 0; i <= input_audio_busses; ++i)
+     {
++
+         auto res = _instance.component()->getBusInfo(Steinberg::Vst::MediaTypes::kAudio,
+                                                      Steinberg::Vst::BusDirections::kInput, i, info);
+-        if (res == Steinberg::kResultOk && info.busType == Steinberg::Vst::BusTypes::kMain) // Then use this one
++        if (res == Steinberg::kResultOk) // Then use this one
+         {
++
+             _max_input_channels = info.channelCount;
+-            _current_input_channels = _max_input_channels;
++            _current_input_channels += _max_input_channels;
+             res = _instance.component()->activateBus(Steinberg::Vst::MediaTypes::kAudio,
+                                                      Steinberg::Vst::BusDirections::kInput, i, Steinberg::TBool(true));
+             if (res != Steinberg::kResultOk)
+@@ -641,7 +647,6 @@ bool Vst3xWrapper::_setup_audio_busses()
+                 SUSHI_LOG_ERROR("Failed to activate plugin input bus {}", i);
+                 return false;
+             }
+-            break;
+         }
+     }
+     for (int i = 0; i < output_audio_busses; ++i)
+@@ -651,7 +656,7 @@ bool Vst3xWrapper::_setup_audio_busses()
+         if (res == Steinberg::kResultOk && info.busType == Steinberg::Vst::BusTypes::kMain) // Then use this one
+         {
+             _max_output_channels = info.channelCount;
+-            _current_output_channels = _max_output_channels;
++            _current_output_channels += _max_output_channels;
+             res = _instance.component()->activateBus(Steinberg::Vst::MediaTypes::kAudio,
+                                                      Steinberg::Vst::BusDirections::kOutput, i, Steinberg::TBool(true));
+             if (res != Steinberg::kResultOk)
+@@ -659,10 +664,12 @@ bool Vst3xWrapper::_setup_audio_busses()
+                 SUSHI_LOG_ERROR("Failed to activate plugin output bus {}", i);
+                 return false;
+             }
+-            break;
++            
+         }
+     }
+-    SUSHI_LOG_INFO("Vst3 wrapper ({}) has {} inputs and {} outputs", this->name(), _max_input_channels, _max_output_channels);
++    _max_output_channels = _current_output_channels;
++    _max_input_channels = _current_input_channels;
++    SUSHI_LOG_INFO("Vst3 wrappera ({}) has {} inputs and {} outputs", this->name(), _current_input_channels, _current_output_channels);
+     return true;
+ }
+ 
+@@ -697,12 +704,17 @@ bool Vst3xWrapper::_setup_event_busses()
+ 
+ bool Vst3xWrapper::_setup_channels()
+ {
+-    SUSHI_LOG_INFO("Vst3 wrapper ({}) setting up {} inputs and {} outputs", this->name(), _current_input_channels, _current_output_channels);
+-    Steinberg::Vst::SpeakerArrangement input_arr = speaker_arr_from_channels(_current_input_channels);
+-    Steinberg::Vst::SpeakerArrangement output_arr = speaker_arr_from_channels(_current_output_channels);
++    SUSHI_LOG_INFO("Vst3 wrapperb ({}) setting up {} inputs and {} outputs", this->name(), _current_input_channels, _current_output_channels);
++Steinberg::Vst::SpeakerArrangement input_arr[_num_input_busses];
++    speaker_arr_from_channels(_current_input_channels,input_arr);
++
++    Steinberg::Vst::SpeakerArrangement output_arr[_num_output_busses];
++      
++    speaker_arr_from_channels(_current_output_channels,output_arr);
++
+ 
+     /* numIns and numOuts refer to the number of busses, not channels, the docs are very vague on this point */
+-    auto res = _instance.processor()->setBusArrangements(&input_arr, (_max_input_channels == 0)? 0:1, &output_arr, 1);
++    auto res = _instance.processor()->setBusArrangements(input_arr, _num_input_busses, output_arr, _num_output_busses);
+     if (res != Steinberg::kResultOk)
+     {
+         SUSHI_LOG_ERROR("Failed to set a valid channel arrangement");
+@@ -938,32 +950,73 @@ int Vst3xWrapper::_parameter_update_callback(EventId /*id*/)
+     return res == Steinberg::kResultOk? EventStatus::HANDLED_OK : EventStatus::ERROR;
+ }
+ 
+-Steinberg::Vst::SpeakerArrangement speaker_arr_from_channels(int channels)
++void    speaker_arr_from_channels(int channels, Steinberg::Vst::SpeakerArrangement* bus)
+ {
++
+     switch (channels)
+     {
+         case 0:
+-            return Steinberg::Vst::SpeakerArr::kEmpty;
++            bus[0]= Steinberg::Vst::SpeakerArr::kEmpty;
++            break;
+         case 1:
+-            return Steinberg::Vst::SpeakerArr::kMono;
++            bus[0] =Steinberg::Vst::SpeakerArr::kMono;
++            break;
+         case 2:
+-            return Steinberg::Vst::SpeakerArr::kStereo;
++            bus[0] =Steinberg::Vst::SpeakerArr::kMono;
++            bus[1] =Steinberg::Vst::SpeakerArr::kMono;
++            break;
+         case 3:
+-            return Steinberg::Vst::SpeakerArr::k30Music;
++            bus[0] =Steinberg::Vst::SpeakerArr::k30Music;
++            break;
+         case 4:
+-            return Steinberg::Vst::SpeakerArr::k40Music;
++            bus[0] =Steinberg::Vst::SpeakerArr::k40Music;
++            break;
+         case 5:
+-            return Steinberg::Vst::SpeakerArr::k50;
++            bus[0] =Steinberg::Vst::SpeakerArr::k50;
++            break;
+         case 6:
+-            return Steinberg::Vst::SpeakerArr::k60Music;
++            bus[0] =Steinberg::Vst::SpeakerArr::k60Music;
++            break;
+         case 7:
+-            return Steinberg::Vst::SpeakerArr::k70Music;
++            bus[0] =Steinberg::Vst::SpeakerArr::k70Music;
++            break;
++        case 36:
++            bus[0] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[1] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[2] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[3] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[4] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[5] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[6] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[7] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[8] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[9] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[10] = Steinberg::Vst::SpeakerArr::kMono;
++            bus[11] = Steinberg::Vst::SpeakerArr::kMono;
++
++            bus[12] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[13] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[14] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[15] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[16] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[17] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[18] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[19] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[20] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[21] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[22] = Steinberg::Vst::SpeakerArr::kStereo;
++            bus[23] = Steinberg::Vst::SpeakerArr::kStereo;
++            break;
++
+         default:
+-            return Steinberg::Vst::SpeakerArr::k80Music;
++            bus[0] =Steinberg::Vst::SpeakerArr::k80Music;
++            break;
+     }
++    }
++}
+ }
+-} // end namespace vst3
+-} // end namespace sushi
++ // end namespace vst3
++ // end namespace sushi
+ 
+ #endif //SUSHI_BUILD_WITH_VST3
+ #ifndef SUSHI_BUILD_WITH_VST3
+diff --git a/src/library/vst3x_wrapper.h b/src/library/vst3x_wrapper.h
+index 28dc2d8..a461fc7 100644
+--- a/src/library/vst3x_wrapper.h
++++ b/src/library/vst3x_wrapper.h
+@@ -63,6 +63,7 @@ public:
+ 
+     virtual ~Vst3xWrapper()
+     {
++		 printf("\nplugincleanup\n");
+         _cleanup();
+     }
+ 
+@@ -190,6 +191,8 @@ private:
+     int _main_program_list_id;
+     int _program_count{0};
+     int _current_program{0};
++    int _num_output_busses;
++    int _num_input_busses;
+ 
+     BypassManager _bypass_manager{_bypassed};
+ 
+@@ -221,8 +224,7 @@ private:
+     friend class ComponentHandler;
+ };
+ 
+-Steinberg::Vst::SpeakerArrangement speaker_arr_from_channels(int channels);
+-
++void speaker_arr_from_channels(int channels,Steinberg::Vst::SpeakerArrangement *array );
+ } // end namespace vst3
+ } // end namespace sushi
+ 
+diff --git a/src/main.cpp b/src/main.cpp
+index f32a84f..788f753 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -83,12 +83,15 @@ std::condition_variable exit_notifier;
+ 
+ void sigint_handler([[maybe_unused]] int sig)
+ {
++	printf("\n\nsushi exit?\n\n\n");
++
+     exit_flag = true;
+     exit_notifier.notify_one();
+ }
+ 
+ void print_sushi_headline()
+ {
++	printf("sushistart\n");
+     std::cout << "SUSHI - Copyright 2017-2020 Elk, Stockholm" << std::endl;
+     std::cout << "SUSHI is licensed under the Affero GPL 3.0. Source code is available at github.com/elk-audio" << std::endl;
+ }
+Submodule third-party/rapidjson contains modified content
+diff --git a/third-party/rapidjson/include/rapidjson/reader.h b/third-party/rapidjson/include/rapidjson/reader.h
+index 44a6bcd3..fa4f7b6e 100644
+--- a/third-party/rapidjson/include/rapidjson/reader.h
++++ b/third-party/rapidjson/include/rapidjson/reader.h
+@@ -1009,7 +1009,7 @@ private:
+                 size_t escapeOffset = is.Tell();    // For invalid escaping, report the initial '\\' as error offset
+                 is.Take();
+                 Ch e = is.Peek();
+-                if ((sizeof(Ch) == 1 || unsigned(e) < 256) && RAPIDJSON_LIKELY(escape[static_cast<unsigned char>(e)])) {
++                if ((sizeof(Ch) == 1) && RAPIDJSON_LIKELY(escape[static_cast<unsigned char>(e)])) {
+                     is.Take();
+                     os.Put(static_cast<typename TEncoding::Ch>(escape[static_cast<unsigned char>(e)]));
+                 }
+@@ -1819,7 +1819,7 @@ private:
+ #undef N16
+ //!@endcond
+ 
+-        if (sizeof(Ch) == 1 || static_cast<unsigned>(c) < 256)
++        if (sizeof(Ch) == 1)
+             return static_cast<Token>(tokenMap[static_cast<unsigned char>(c)]);
+         else
+             return NumberToken;
+diff --git a/third-party/rapidjson/include/rapidjson/writer.h b/third-party/rapidjson/include/rapidjson/writer.h
+index 6f5b6903..f865eb85 100644
+--- a/third-party/rapidjson/include/rapidjson/writer.h
++++ b/third-party/rapidjson/include/rapidjson/writer.h
+@@ -427,7 +427,7 @@ protected:
+                     PutUnsafe(*os_, hexDigits[(trail      ) & 15]);                    
+                 }
+             }
+-            else if ((sizeof(Ch) == 1 || static_cast<unsigned>(c) < 256) && RAPIDJSON_UNLIKELY(escape[static_cast<unsigned char>(c)]))  {
++            else if ((sizeof(Ch) == 1) && RAPIDJSON_UNLIKELY(escape[static_cast<unsigned char>(c)]))  {
+                 is.Take();
+                 PutUnsafe(*os_, '\\');
+                 PutUnsafe(*os_, static_cast<typename OutputStream::Ch>(escape[static_cast<unsigned char>(c)]));
+Submodule third-party/vst3sdk contains modified content
+Submodule public.sdk contains modified content
+diff --git a/third-party/vst3sdk/public.sdk/source/common/threadchecker_linux.cpp b/third-party/vst3sdk/public.sdk/source/common/threadchecker_linux.cpp
+index 4810fe8..09e1e77 100644
+--- a/third-party/vst3sdk/public.sdk/source/common/threadchecker_linux.cpp
++++ b/third-party/vst3sdk/public.sdk/source/common/threadchecker_linux.cpp
+@@ -35,6 +35,7 @@
+ //-----------------------------------------------------------------------------
+ 
+ #include "threadchecker.h"
++#include <cstdio>
+ 
+ #if SMTG_OS_LINUX
+ 

@@ -1,0 +1,29 @@
+# ignore all logs
+*.log
+
+#ignore  build
+/build
+/build_native
+/build*
+/release
+/release*
+/melb_inst_vst3/synthia/source/version.h
+
+#ignore vsCode
+cppcheck*
+.vscode/settings.json
+
+#ignore some debug files 
+01_Lush'caT.json
+01_Lush'caTnew.json
+cat2
+02_patch.json
+cat3
+cat4
+cat2.json
+.vscode/*
+.vscode/c_cpp_properties.json
+melb_inst_vst3/synthia/source/BLANK.out.json
+melb_inst_vst3/synthia/source/BLANK.json
+*.wav
+melb_inst_vst3/synthia/source/version.h

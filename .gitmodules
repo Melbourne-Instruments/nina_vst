@@ -1,0 +1,6 @@
+[submodule "submodules/AudioFile"]
+	path = submodules/AudioFile
+	url = https://github.com/adamstark/AudioFile.git
+[submodule "submodules/rapidjson"]
+	path = submodules/rapidjson
+	url = https://github.com/Tencent/rapidjson.git

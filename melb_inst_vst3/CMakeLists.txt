@@ -1,0 +1,2 @@
+add_subdirectory(synthia)
+#add_subdirectory(synth_template)

@@ -1,0 +1,15 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+AlignArrayOfStructures: Right
+AlignTrailingComments: true
+AllowShortBlocksOnASingleLine: Empty
+NamespaceIndentation: None
+ColumnLimit: 0
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+BreakConstructorInitializers: AfterColon
+BreakConstructorInitializersBeforeComma: true
+AlignAfterOpenBracket: DontAlign
+BreakBeforeBinaryOperators: None
+#EmptyLineAfterAccessModifier: Always
+SeparateDefinitionBlocks : Always
